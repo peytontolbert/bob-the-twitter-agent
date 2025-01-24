@@ -1,0 +1,10 @@
+.env
+.cursorrules
+log.txt
+thoughts.txt
+__pycache__/
+*.json
+*.log
+browser_data/
+.pytest_cache/
+whisper_audio/
