@@ -161,7 +161,7 @@ class MentionController:
             return []
             
     async def reply_to_tweet(self, mention, reply_text):
-        """Reply to a tweet using proven approach from debug_mentions"""
+        """Reply to a tweet by typing out characters"""
         try:
             # Find reply button
             reply_button = None
@@ -184,63 +184,81 @@ class MentionController:
                 self.logger.error("Could not find reply button")
                 return False
 
-            # Click reply button with multiple fallbacks
+            # Click reply button
             try:
+                # Scroll into view
                 self.handler.browser.driver.execute_script("arguments[0].scrollIntoView(true);", reply_button)
                 await asyncio.sleep(1)
                 
+                # Click with JavaScript
                 self.handler.browser.driver.execute_script("arguments[0].click();", reply_button)
                 await asyncio.sleep(1)
                 
-                # If JavaScript click didn't work, try regular click
-                input_box = await self.wait_and_find_element("div[data-testid='tweetTextarea_0']", timeout=3)
-                if not input_box:
-                    actions = ActionChains(self.handler.browser.driver)
-                    actions.move_to_element(reply_button)
-                    actions.click()
-                    actions.perform()
-                    await asyncio.sleep(1)
-                    
-                # Type reply
-                input_box = await self.wait_and_find_element(
-                    "div[data-testid='tweetTextarea_0'][role='textbox']"
+                # Find tweet input box
+                input_box = WebDriverWait(self.handler.browser.driver, 5).until(
+                    EC.presence_of_element_located((By.CSS_SELECTOR, 
+                        "div[data-testid='tweetTextarea_0'][role='textbox']"))
                 )
-                if not input_box:
-                    return False
-                    
+                
+                # Click the input box
                 actions = ActionChains(self.handler.browser.driver)
                 actions.move_to_element(input_box)
                 actions.click()
                 actions.perform()
                 await asyncio.sleep(1)
-                
+
+                # Type out the reply character by character
                 for char in reply_text:
                     actions = ActionChains(self.handler.browser.driver)
                     actions.send_keys(char)
                     actions.perform()
                     await asyncio.sleep(random.uniform(0.03, 0.1))
-                    
-                # Find and click post button
-                post_button = await self.wait_and_find_element("div[data-testid='tweetButton']")
+
+                await asyncio.sleep(1)  # Wait a moment after typing
+
+                # Find post button using WebDriverWait
+                post_button = None
+                post_selectors = [
+                    "button[data-testid='tweetButton']",  # Changed to button instead of div
+                    "button[role='button'][data-testid='tweetButton']",
+                    "div[data-testid='tweetButton']",
+                    "div[role='button'][data-testid='tweetButton']"
+                ]
+
+                for selector in post_selectors:
+                    try:
+                        post_button = WebDriverWait(self.handler.browser.driver, 5).until(
+                            EC.element_to_be_clickable((By.CSS_SELECTOR, selector))
+                        )
+                        if post_button:
+                            self.logger.info(f"Found post button with selector: {selector}")
+                            break
+                    except:
+                        continue
+
                 if not post_button:
+                    self.logger.error("Could not find post button")
                     return False
-                    
+
+                # Click post button
                 self.handler.browser.driver.execute_script("arguments[0].click();", post_button)
                 await asyncio.sleep(2)
-                
-                # Verify reply was sent
-                textarea = self.handler.browser.driver.find_elements(
-                    By.CSS_SELECTOR, "div[data-testid='tweetTextarea_0']"
-                )
-                if not textarea:
+
+                # Verify reply was sent by checking if textarea is gone
+                try:
+                    WebDriverWait(self.handler.browser.driver, 3).until_not(
+                        EC.presence_of_element_located((By.CSS_SELECTOR, "div[data-testid='tweetTextarea_0']"))
+                    )
+                    self.logger.info("Reply sent successfully")
                     return True
-                    
-                return False
-                
+                except:
+                    self.logger.error("Reply may not have been sent - textarea still present")
+                    return False
+
             except Exception as e:
                 self.logger.error(f"Error sending reply: {e}")
                 return False
-                
+
         except Exception as e:
             self.logger.error(f"Error in reply_to_tweet: {e}")
             return False
@@ -295,7 +313,18 @@ class MentionController:
             self.logger.error(f"Error finding elements with selector {selector}: {e}")
             return []
 
-    def load_replied_mentions(self):
+    async def wait_and_find_element(self, selector, timeout=5):
+        """Wait for and find an element matching a CSS selector"""
+        try:
+            element = WebDriverWait(self.handler.browser.driver, timeout).until(
+                EC.presence_of_element_located((By.CSS_SELECTOR, selector))
+            )
+            return element
+        except Exception as e:
+            self.logger.error(f"Error finding element with selector {selector}: {e}")
+            return None
+
+    async def load_replied_mentions(self):
         """Load previously replied mentions"""
         try:
             with open('data/replied_mentions.json', 'r') as f:
@@ -303,7 +332,7 @@ class MentionController:
         except:
             return set()
 
-    def save_replied_mentions(self, mentions):
+    async def save_replied_mentions(self, mentions):
         """Save replied mentions"""
         with open('data/replied_mentions.json', 'w') as f:
             json.dump(list(mentions), f) 

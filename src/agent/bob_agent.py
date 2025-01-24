@@ -174,15 +174,15 @@ Response:"""
     async def process_message(self, message: str, context: Dict) -> str:
         """Process a direct message using the fast model for quick responses."""
         try:
-            response = await openai.ChatCompletion.acreate(
-                model="gpt-3.5-turbo",
+            response = await openai.chat.completions.create(
+                model="gpt-4o-mini",
                 messages=[
                     {"role": "system", "content": self._get_personality_prompt()},
                     {"role": "system", "content": f"Context: {context}"},
                     {"role": "user", "content": message}
                 ],
                 temperature=0.7,
-                max_tokens=150
+                max_tokens=100
             )
             return response.choices[0].message.content
             

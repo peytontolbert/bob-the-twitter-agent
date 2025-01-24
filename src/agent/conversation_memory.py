@@ -12,6 +12,7 @@ class ConversationMemory:
         self.data_dir = Path("data/conversations")
         self.data_dir.mkdir(parents=True, exist_ok=True)
         self.memory = {}
+        self.replied_mentions = self.load_replied_mentions()
         self.load_all_conversations()
         
     def load_all_conversations(self):
@@ -197,4 +198,26 @@ class ConversationMemory:
             
         except Exception as e:
             logger.error(f"Error checking replied mentions: {e}")
-            return False 
+            return False
+
+    def has_replied_to_tweet(self, tweet_id):
+        """Check if we've already replied to a tweet"""
+        return tweet_id in self.replied_mentions
+        
+    def add_tweet_reply(self, tweet_id):
+        """Mark a tweet as replied to"""
+        self.replied_mentions.add(tweet_id)
+        self.save_replied_mentions()
+        
+    def load_replied_mentions(self):
+        """Load previously replied mentions"""
+        try:
+            with open('data/replied_mentions.json', 'r') as f:
+                return set(json.load(f))
+        except:
+            return set()
+            
+    def save_replied_mentions(self):
+        """Save replied mentions"""
+        with open('data/replied_mentions.json', 'w') as f:
+            json.dump(list(self.replied_mentions), f) 
