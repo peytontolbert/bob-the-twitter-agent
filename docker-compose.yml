@@ -1,0 +1,12 @@
+version: '3.8'
+
+services:
+  bob:
+    build: .
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+    environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - TWITTER_COOKIES=${TWITTER_COOKIES}
+    restart: unless-stopped 

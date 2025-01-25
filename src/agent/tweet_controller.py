@@ -3,6 +3,7 @@ import asyncio
 import random
 import json
 from pathlib import Path
+import time
 from typing import Dict, List, Optional
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
@@ -28,6 +29,7 @@ class TweetController:
         self.bob = bob
         self.tweet_queue = []
         self.posted_tweets = set()
+        self.tweet_history = []  # To store the last 5 tweets
         self.tweet_history_file = Path("data/tweet_history.json")
         self.last_tweet_time = None
         self.tweet_interval_minutes = tweet_interval_minutes
@@ -40,11 +42,22 @@ class TweetController:
                 with open(self.tweet_history_file, 'r') as f:
                     history = json.load(f)
                     self.posted_tweets = set(history.get('posted_tweets', []))
+                    self.tweet_history = history.get('tweet_history', [])
+                    # Convert the timestamp string back to datetime object
+                    last_tweet_time = history.get('last_tweet_time')
+                    if last_tweet_time:
+                        self.last_tweet_time = datetime.fromisoformat(last_tweet_time)
+                    else:
+                        self.last_tweet_time = None
             else:
                 self.posted_tweets = set()
+                self.tweet_history = []
+                self.last_tweet_time = None
         except Exception as e:
             logger.error(f"Error loading tweet history: {e}")
             self.posted_tweets = set()
+            self.tweet_history = []
+            self.last_tweet_time = None
             
     def _save_tweet_history(self):
         """Save tweet history to file."""
@@ -52,7 +65,9 @@ class TweetController:
             self.tweet_history_file.parent.mkdir(parents=True, exist_ok=True)
             with open(self.tweet_history_file, 'w') as f:
                 json.dump({
-                    'posted_tweets': list(self.posted_tweets)
+                    'posted_tweets': list(self.posted_tweets),
+                    'tweet_history': self.tweet_history,
+                    'last_tweet_time': self.last_tweet_time.isoformat() if self.last_tweet_time else None  # Save last tweet time
                 }, f)
         except Exception as e:
             logger.error(f"Error saving tweet history: {e}")
@@ -81,6 +96,11 @@ class TweetController:
             bool: Whether the tweet was posted successfully
         """
         try:
+            # Check if the tweet is in the last 5 tweets
+            if content in self.tweet_history:
+                logger.info("Skipping tweet as it is similar to recent tweets.")
+                return False
+            
             # Navigate to home
             self.handler.browser.navigate("https://twitter.com/home")
             await asyncio.sleep(3)
@@ -107,61 +127,73 @@ class TweetController:
                     continue
                     
             if not compose_box:
-                # Try clicking the "Post" button first
-                post_button_selectors = [
-                    "[data-testid='SideNav_NewTweet_Button']",
-                    "a[href='/compose/tweet']"
-                ]
-                
-                post_button = None
-                for selector in post_button_selectors:
-                    try:
-                        post_button = WebDriverWait(self.handler.browser.driver, 5).until(
-                            EC.element_to_be_clickable((By.CSS_SELECTOR, selector))
-                        )
-                        if post_button:
-                            logger.info(f"Found compose button with selector: {selector}")
-                            break
-                    except:
-                        continue
-                        
-                if post_button:
-                    post_button.click()
-                    await asyncio.sleep(2)
-                    
-                    # Now try to find the compose box again
-                    compose_box = WebDriverWait(self.handler.browser.driver, 5).until(
-                        EC.element_to_be_clickable((By.CSS_SELECTOR, "[data-testid='tweetTextarea_0']"))
-                    )
-                    
-            if not compose_box:
                 logger.error("Could not find tweet compose box")
                 return False
                 
             # Click and enter tweet content
             compose_box.click()
-            await asyncio.sleep(1)
-            compose_box.clear()
-            await asyncio.sleep(0.5)
+            await asyncio.sleep(4)  # Wait after click
             
-            # Type content character by character
+            # Additional wait to ensure compose box is ready
+            await asyncio.sleep(7)  # Replace time.sleep with asyncio.sleep
+            
+            # Type content character by character with proper pacing
             actions = ActionChains(self.handler.browser.driver)
             for char in content:
                 actions.send_keys(char)
-                actions.pause(random.uniform(0.01, 0.05))
+                actions.pause(random.uniform(0.05, 0.1))
             actions.perform()
-            await asyncio.sleep(2)
+            await asyncio.sleep(3)  # Wait after typing completed
             
-            # Find and click Post button
-            post_button = WebDriverWait(self.handler.browser.driver, 5).until(
-                EC.element_to_be_clickable((By.CSS_SELECTOR, "button[data-testid='tweetButton'][role='button']"))
-            )
-            post_button.click()
-            await asyncio.sleep(3)
+            # Find and click Post button with retry mechanism
+            post_button = None
+            post_button_selectors = [
+                "button[data-testid='tweetButton'][role='button']",
+                "button:contains('Post')"  # Using inner text to find the button
+            ]
+            
+            for _ in range(5):  # Retry up to 5 times
+                try:
+                    # First try to find by data-testid
+                    post_button = WebDriverWait(self.handler.browser.driver, 5).until(
+                        EC.element_to_be_clickable((By.CSS_SELECTOR, post_button_selectors[0]))
+                    )
+                    
+                    # If not found, try to find by inner text
+                    if not post_button:
+                        post_button = WebDriverWait(self.handler.browser.driver, 5).until(
+                            EC.presence_of_element_located((By.XPATH, "//button[span[text()='Post']]"))
+                        )
+                    
+                    # Scroll into view
+                    self.handler.browser.driver.execute_script("arguments[0].scrollIntoView(true);", post_button)
+                    await asyncio.sleep(0.5)  # Wait for the button to stabilize
+                    
+                    # Attempt to click the button
+                    post_button.click()
+                    await asyncio.sleep(3)  # Wait for the tweet to post
+                    break  # Exit the retry loop if successful
+                except Exception as e:
+                    logger.error(f"Error clicking post button: {e}")
+                    # Attempt to click using JavaScript if normal click fails
+                    if post_button:
+                        self.handler.browser.driver.execute_script("arguments[0].click();", post_button)
+                        await asyncio.sleep(3)  # Wait for the tweet to post
+                    else:
+                        logger.error("Post button not found, cannot click.")
+                    break  # Exit the retry loop if successful
+            
+            if not post_button:
+                logger.error("Could not find or click the Post button")
+                return False
             
             # Add to posted tweets
             self.posted_tweets.add(content)
-            self._save_tweet_history()
+            self.tweet_history.append(content)  # Add to history
+            if len(self.tweet_history) > 5:  # Keep only the last 5 tweets
+                self.tweet_history.pop(0)
+            self.last_tweet_time = datetime.now()  # Update last tweet time
+            self._save_tweet_history()  # Save the updated history
             
             logger.info(f"Successfully posted tweet: {content[:50]}...")
             return True
@@ -266,8 +298,15 @@ class TweetController:
         if not self.last_tweet_time:
             return True
             
-        elapsed = (datetime.now() - self.last_tweet_time).total_seconds()
-        return elapsed >= (self.tweet_interval_minutes * 60)
+        try:
+            elapsed = (datetime.now() - self.last_tweet_time).total_seconds()
+            should_tweet = elapsed >= (self.tweet_interval_minutes * 60)
+            if not should_tweet:
+                logger.info(f"Not time to tweet yet. {int((self.tweet_interval_minutes * 60 - elapsed) / 60)} minutes remaining.")
+            return should_tweet
+        except Exception as e:
+            logger.error(f"Error checking tweet interval: {e}")
+            return False
 
     async def process_auto_tweet(self):
         """Process automatic tweet if it's time"""

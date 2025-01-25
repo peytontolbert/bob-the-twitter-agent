@@ -200,8 +200,6 @@ class ActionHandler:
             if self.browser:
                 self._save_session()
                 self.browser.cleanup()
-            if self.audio_processor:
-                self.audio_processor.cleanup()
             logger.info("Cleanup completed successfully")
         except Exception as e:
             logger.error(f"Error during cleanup: {e}")

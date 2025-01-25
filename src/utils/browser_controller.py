@@ -194,24 +194,27 @@ class BrowserController:
             return False
             
     def load_cookies(self) -> bool:
-        """Load cookies from file.
+        """Load cookies from environment variables.
         
         Returns:
             bool: Whether cookies were loaded successfully
         """
         try:
-            if not self.cookies_file.exists():
-                logger.warning("No saved cookies found")
+            cookies_str = os.getenv('TWITTER_COOKIES')
+            if not cookies_str:
+                logger.warning("No cookies found in environment variables")
                 return False
                 
-            with open(self.cookies_file, 'r') as f:
-                cookies = json.load(f)
-                
+            cookies = json.loads(cookies_str)
+            
             # Navigate to domain before setting cookies
             self.navigate("https://twitter.com")
             
             for cookie in cookies:
                 try:
+                    # Remove problematic fields if they exist
+                    cookie.pop('sameSite', None)
+                    cookie.pop('storeId', None)
                     self.driver.add_cookie(cookie)
                 except Exception as e:
                     logger.warning(f"Error adding cookie: {e}")

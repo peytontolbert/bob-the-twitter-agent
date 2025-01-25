@@ -11,7 +11,6 @@ from src.agent.bob_agent import BobTheBuilder
 from src.agent.message_controller import MessageController
 from src.agent.mention_controller import MentionController
 from src.agent.tweet_controller import TweetController
-from src.agent.auto_tweet_controller import AutoTweetController
 from src.agent.conversation_memory import ConversationMemory
 import json
 from pathlib import Path
@@ -33,7 +32,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 class BobController:
-    def __init__(self, tweet_interval_minutes=60):
+    def __init__(self, tweet_interval_minutes=30):
         # Initialize shared memory
         self.memory = ConversationMemory()
         
