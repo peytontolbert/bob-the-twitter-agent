@@ -9,22 +9,28 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.action_chains import ActionChains
 from selenium.common.exceptions import TimeoutException, NoSuchElementException
+from datetime import datetime
 
 logger = logging.getLogger(__name__)
 
 class TweetController:
     """Controller for managing tweet operations."""
     
-    def __init__(self, action_handler):
+    def __init__(self, action_handler, bob=None, tweet_interval_minutes=60):
         """Initialize the tweet controller.
         
         Args:
             action_handler: The main ActionHandler instance
+            bob: BobTheBuilder instance for generating tweets
+            tweet_interval_minutes: Minutes between auto-tweets
         """
         self.handler = action_handler
+        self.bob = bob
         self.tweet_queue = []
         self.posted_tweets = set()
         self.tweet_history_file = Path("data/tweet_history.json")
+        self.last_tweet_time = None
+        self.tweet_interval_minutes = tweet_interval_minutes
         self._load_tweet_history()
         
     def _load_tweet_history(self):
@@ -253,4 +259,30 @@ class TweetController:
             
     def cleanup(self):
         """Clean up resources."""
-        self._save_tweet_history() 
+        self._save_tweet_history()
+
+    async def should_tweet(self):
+        """Check if it's time to tweet based on the interval"""
+        if not self.last_tweet_time:
+            return True
+            
+        elapsed = (datetime.now() - self.last_tweet_time).total_seconds()
+        return elapsed >= (self.tweet_interval_minutes * 60)
+
+    async def process_auto_tweet(self):
+        """Process automatic tweet if it's time"""
+        try:
+            if await self.should_tweet():
+                tweet_content = await self.bob.generate_tweet()
+                if tweet_content:
+                    success = await self.post_tweet(tweet_content)
+                    if success:
+                        self.last_tweet_time = datetime.now()
+                        logger.info(f"Posted auto-tweet: {tweet_content[:50]}...")
+                    else:
+                        logger.error("Failed to post auto-tweet")
+                else:
+                    logger.error("Failed to generate tweet content")
+
+        except Exception as e:
+            logger.error(f"Error in auto tweet process: {e}") 

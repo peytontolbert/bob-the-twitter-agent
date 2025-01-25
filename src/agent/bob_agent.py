@@ -5,6 +5,7 @@ import openai
 from datetime import datetime, timedelta
 import os
 from .conversation_memory import ConversationMemory
+import random
 
 logger = logging.getLogger(__name__)
 
@@ -159,7 +160,6 @@ Response:"""
             return False
             
         # Probability of speaking increases with confidence
-        import random
         speak_probability = confidence * (1.5 if context_relevance else 1.0)
         return random.random() < speak_probability
         
@@ -286,4 +286,77 @@ When speaking:
 - Share relevant personal experiences
 - Promote sustainable solutions
 
-Remember: You're here to help people build and create, not to dominate the conversation.""" 
+Remember: You're here to help people build and create, not to dominate the conversation."""
+
+    async def generate_tweet(self, prompt: str = None) -> str:
+        """Generate a tweet using Bob's personality"""
+        try:
+            if not prompt:
+                # Topics Bob likes to tweet about
+                topics = [
+                    "AI generations in modeling and simulation",
+                    "creating datasets for machine learning applications",
+                    "agentic applications of AI in various contexts",
+                    "AI-driven innovations in technology and design",
+                    "data modeling techniques for efficiency",
+                    "AI applications in predictive analytics",
+                    "using AI for optimizing workflows and processes",
+                    "ethical considerations in AI development",
+                    "AI's role in enhancing collaborative efforts",
+                    "advancements in AI for smart solutions",
+                    "sustainable practices in AI development",
+                    "the impact of AI on overall project efficiency",
+                    "collaborative tools powered by AI",
+                    "AI's influence on design thinking and creativity",
+                    "the future of AI in smart cities and integration",
+                    "using AI for risk management in various scenarios",
+                    "the role of AI in enhancing user experience across platforms",
+                    "AI's impact on societal change and adaptation",
+                    "the intersection of AI and human creativity",
+                    "AI in enhancing educational methodologies and resources",
+                    "the role of AI in global communication and connectivity",
+                    "AI's contribution to environmental sustainability efforts",
+                    "using AI for improving decision-making processes",
+                    "AI in enhancing data security and privacy measures",
+                    "the future of AI in shaping cultural narratives",
+                    "AI's role in fostering innovation and creativity",
+                    "the ethical implications of AI in everyday life",
+                    "AI's influence on public policy and governance",
+                    "the potential of AI in addressing global challenges",
+                    "AI in enhancing accessibility and inclusivity in technology",
+                    "the role of AI in shaping future job markets",
+                    "AI's impact on personal and collective identity",
+                    "using AI for enhancing community engagement and participation"
+                ]
+                prompt = f"""As Bob the Builder, create an engaging tweet about {random.choice(topics)}. 
+                Keep it helpful and positive, focusing on building and creating things.
+                Make it sound natural and conversational, like I'm sharing my expertise with friends.
+                Keep it under 280 characters."""
+
+            response = await self.client.chat.completions.create(
+                model="gpt-4o",
+                messages=[
+                    {
+                        "role": "system",
+                        "content": f"You are Bob the Builder, an AI who loves to help people build things. Generate a tweet that's helpful and focused on building/making things."
+                    },
+                    {
+                        "role": "user",
+                        "content": prompt
+                    }
+                ],
+                temperature=0.7,
+                max_tokens=100
+            )
+
+            if response and response.choices:
+                tweet = response.choices[0].message.content.strip()
+                logger.info(f"Generated tweet: {tweet[:100]}...")
+                return tweet
+            else:
+                logger.error("No choices in OpenAI response")
+                return None
+
+        except Exception as e:
+            logger.error(f"Error generating tweet: {e}")
+            return None 

@@ -553,29 +553,43 @@ class MessageController:
         try:
             # Click to open request
             actions = ActionChains(self.handler.browser.driver)
-            actions.move_to_element(request["element"])
+            actions.move_to_element(request)
             actions.click()
             actions.perform()
             await asyncio.sleep(2)  # Wait for request to open
 
-            # Find and click accept button using proven selector
-            accept_button = await self.wait_and_find_element(
-                "div[role='button'] div[dir='ltr'] span:not([dir])",
-                timeout=5
-            )
+            # Try multiple selectors for accept button
+            selectors = [
+                "span.css-1jxf684.r-bcqeeo.r-1ttztb7.r-qvutc0.r-poiln3",  # Direct span selector
+                "button[role='button'][type='button'] span.css-1jxf684",    # Button > span
+                "button[type='button'] div[dir='ltr'] span.css-1jxf684",    # Button > div > span
+                "button[role='button'] div[dir='ltr'] span.r-poiln3"        # Using one of the unique classes
+            ]
             
-            if accept_button and "Accept" in accept_button.text:
-                # Get the parent button element
-                while accept_button.tag_name != "button":
-                    accept_button = accept_button.find_element(By.XPATH, "./..")
-                    
-                # Click using JavaScript for reliability
+            accept_button = None
+            for selector in selectors:
+                try:
+                    elements = self.handler.browser.driver.find_elements(By.CSS_SELECTOR, selector)
+                    for element in elements:
+                        if element.is_displayed() and "Accept" in element.text:
+                            # Get the parent button element
+                            accept_button = element
+                            while accept_button.tag_name != "button":
+                                accept_button = accept_button.find_element(By.XPATH, "./..")
+                            break
+                    if accept_button:
+                        break
+                except:
+                    continue
+
+            if accept_button:
+                # Click accept button
                 self.handler.browser.driver.execute_script("arguments[0].click();", accept_button)
-                await asyncio.sleep(2)  # Wait for accept to process
+                await asyncio.sleep(2)
                 self.logger.info(f"Accepted request from {request['sender']}")
                 return True
             else:
-                self.logger.error(f"Could not find accept button for {request['sender']}")
+                logger.error(f"Could not find accept button for {request['sender']}")
                 return False
 
         except Exception as e:
@@ -583,35 +597,55 @@ class MessageController:
             return False
 
     async def process_message_requests(self):
-        """Process message requests using proven approach"""
+        """Process pending message requests."""
         try:
-            self.logger.info("\nProcessing message requests:")
-            self.logger.info("-" * 30)
+            logger.info("\nProcessing message requests:")
+            logger.info("-" * 30)
 
-            # Get message requests
-            requests = await self.get_message_requests()
+            # Navigate to message requests
+            self.handler.browser.navigate("https://twitter.com/messages/requests")
+            await asyncio.sleep(4)  # Give time for page to load
+
+            # Find all message request elements
+            request_selectors = [
+                "div[data-testid='conversation']",
+                "div[data-testid='cellInnerDiv']",
+                "div[role='row']"
+            ]
+
+            requests = []
+            for selector in request_selectors:
+                try:
+                    elements = WebDriverWait(self.handler.browser.driver, 5).until(
+                        EC.presence_of_all_elements_located((By.CSS_SELECTOR, selector))
+                    )
+                    if elements:
+                        requests = elements
+                        logger.info(f"Found {len(requests)} message requests")
+                        break
+                except:
+                    continue
+
             if not requests:
-                self.logger.info("No message requests to process")
+                logger.info("No message requests found")
                 return True
 
             # Process each request
             for request in requests:
-                # Accept the request
-                success = await self.accept_request(request)
-                if success:
-                    self.logger.info(f"Successfully accepted request from {request['sender']}")
-                    # Store in memory that we accepted their request (using handle with @ prefix)
-                    self.memory.add_dm(request['sender'], {
-                        'text': 'Message request accepted',
-                        'is_from_us': True,
-                        'timestamp': time.time(),
-                        'type': 'system'
-                    })
-                else:
-                    self.logger.error(f"Failed to accept request from {request['sender']}")
+                try:
+                    # Click the request to open it
+                    request.click()
+                    await asyncio.sleep(2)  # Wait for the request to open
+
+                    # Use the accept_request method to handle the request
+                    await self.accept_request(request)
+
+                except Exception as e:
+                    logger.error(f"Error processing message request: {e}")
+                    continue
 
             return True
 
         except Exception as e:
-            self.logger.error(f"Error processing message requests: {str(e)}")
+            logger.error(f"Error in process_message_requests: {e}")
             return False 
