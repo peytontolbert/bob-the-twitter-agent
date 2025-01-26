@@ -9,7 +9,6 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.action_chains import ActionChains
-from selenium.common.exceptions import TimeoutException, NoSuchElementException
 from datetime import datetime
 
 logger = logging.getLogger(__name__)
@@ -17,7 +16,7 @@ logger = logging.getLogger(__name__)
 class TweetController:
     """Controller for managing tweet operations."""
     
-    def __init__(self, action_handler, bob=None, tweet_interval_minutes=60):
+    def __init__(self, action_handler, bob=None, tweet_interval_minutes=20):
         """Initialize the tweet controller.
         
         Args:
@@ -148,22 +147,36 @@ class TweetController:
             # Find and click Post button with retry mechanism
             post_button = None
             post_button_selectors = [
+                "button[data-testid='tweetButtonInline'][type='button']",
                 "button[data-testid='tweetButton'][role='button']",
-                "button:contains('Post')"  # Using inner text to find the button
+                "button[role='button'][data-testid='tweetButtonInline']",
+                # Fallback to more specific XPath if CSS selectors fail
+                "//button[@role='button' and @data-testid='tweetButtonInline']//span[contains(text(), 'Post')]/.."
             ]
             
             for _ in range(5):  # Retry up to 5 times
                 try:
-                    # First try to find by data-testid
-                    post_button = WebDriverWait(self.handler.browser.driver, 5).until(
-                        EC.element_to_be_clickable((By.CSS_SELECTOR, post_button_selectors[0]))
-                    )
+                    # Try each selector
+                    for selector in post_button_selectors:
+                        try:
+                            if selector.startswith('//'):
+                                # XPath selector
+                                post_button = WebDriverWait(self.handler.browser.driver, 5).until(
+                                    EC.element_to_be_clickable((By.XPATH, selector))
+                                )
+                            else:
+                                # CSS selector
+                                post_button = WebDriverWait(self.handler.browser.driver, 5).until(
+                                    EC.element_to_be_clickable((By.CSS_SELECTOR, selector))
+                                )
+                            if post_button:
+                                logger.info(f"Found post button with selector: {selector}")
+                                break
+                        except:
+                            continue
                     
-                    # If not found, try to find by inner text
                     if not post_button:
-                        post_button = WebDriverWait(self.handler.browser.driver, 5).until(
-                            EC.presence_of_element_located((By.XPATH, "//button[span[text()='Post']]"))
-                        )
+                        continue  # Try next retry if button not found
                     
                     # Scroll into view
                     self.handler.browser.driver.execute_script("arguments[0].scrollIntoView(true);", post_button)
@@ -173,15 +186,19 @@ class TweetController:
                     post_button.click()
                     await asyncio.sleep(3)  # Wait for the tweet to post
                     break  # Exit the retry loop if successful
+                    
                 except Exception as e:
                     logger.error(f"Error clicking post button: {e}")
                     # Attempt to click using JavaScript if normal click fails
                     if post_button:
-                        self.handler.browser.driver.execute_script("arguments[0].click();", post_button)
-                        await asyncio.sleep(3)  # Wait for the tweet to post
+                        try:
+                            self.handler.browser.driver.execute_script("arguments[0].click();", post_button)
+                            await asyncio.sleep(3)  # Wait for the tweet to post
+                            break  # Exit the retry loop if successful
+                        except Exception as js_e:
+                            logger.error(f"JavaScript click failed: {js_e}")
                     else:
                         logger.error("Post button not found, cannot click.")
-                    break  # Exit the retry loop if successful
             
             if not post_button:
                 logger.error("Could not find or click the Post button")
@@ -189,11 +206,19 @@ class TweetController:
             
             # Add to posted tweets
             self.posted_tweets.add(content)
-            self.tweet_history.append(content)  # Add to history
-            if len(self.tweet_history) > 5:  # Keep only the last 5 tweets
+            self.tweet_history.append(content)
+            if len(self.tweet_history) > 5:
                 self.tweet_history.pop(0)
-            self.last_tweet_time = datetime.now()  # Update last tweet time
-            self._save_tweet_history()  # Save the updated history
+            self.last_tweet_time = datetime.now()
+            self._save_tweet_history()
+            
+            # Update Bob's memory with the new tweet
+            if self.bob and hasattr(self.bob, 'memory'):
+                self.bob.memory.add_message('tweets', {
+                    'text': content,
+                    'timestamp': datetime.now().isoformat(),
+                    'is_from_us': True
+                })
             
             logger.info(f"Successfully posted tweet: {content[:50]}...")
             return True

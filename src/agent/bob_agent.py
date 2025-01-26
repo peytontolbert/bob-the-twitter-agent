@@ -291,6 +291,10 @@ Remember: You're here to help people build and create, not to dominate the conve
     async def generate_tweet(self, prompt: str = None) -> str:
         """Generate a tweet using Bob's personality"""
         try:
+            # Get recent tweets from tweet controller's history if available
+            recent_tweets = self.memory.get_recent_context('tweets', limit=5) if hasattr(self.memory, 'get_recent_context') else []
+            recent_tweets_str = "\n".join([f"Previous tweet: {tweet}" for tweet in recent_tweets]) if recent_tweets else "No recent tweets."
+
             if not prompt:
                 # Topics Bob likes to tweet about
                 topics = [
@@ -328,25 +332,35 @@ Remember: You're here to help people build and create, not to dominate the conve
                     "AI's impact on personal and collective identity",
                     "using AI for enhancing community engagement and participation"
                 ]
+                
                 prompt = f"""As Bob the Builder, create an engaging tweet about {random.choice(topics)}. 
                 Keep it helpful and positive, focusing on building and creating things.
                 Make it sound natural and conversational, like I'm sharing my expertise with friends.
-                Keep it under 280 characters."""
+                Keep it under 280 characters.
+                
+                Recent tweet history to avoid repetition:
+                {recent_tweets_str}
+                
+                Generate a tweet that's different from these previous tweets in terms of:
+                1. Topic and focus
+                2. Tone and style
+                3. Specific advice or insights shared
+                4. Call to action or engagement approach"""
 
             response = await self.client.chat.completions.create(
                 model="gpt-4o",
                 messages=[
                     {
                         "role": "system",
-                        "content": f"You are Bob the Builder, an AI who loves to help people build things. Generate a tweet that's helpful and focused on building/making things."
+                        "content": f"You are Bob the Builder, an AI who loves to help people build things. Generate a tweet that's helpful and focused on building/making things. Ensure the content is fresh and different from recent tweets."
                     },
                     {
                         "role": "user",
                         "content": prompt
                     }
                 ],
-                temperature=0.7,
-                max_tokens=100
+                temperature=0.8,  # Slightly increased for more variety
+                max_tokens=80
             )
 
             if response and response.choices:

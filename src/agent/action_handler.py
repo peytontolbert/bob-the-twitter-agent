@@ -126,13 +126,120 @@ class ActionHandler:
                     logger.warning("Saved session invalid or expired")
             
             # Manual login required
-            logger.info("Manual login required")
+            logger.info("Starting manual login process")
             self.browser.navigate("https://twitter.com/login")
-            await asyncio.sleep(5)  # Wait for manual login
+            await asyncio.sleep(2)
+
+            # Find and fill username field
+            username_selectors = [
+                (By.NAME, "text"),
+                (By.CSS_SELECTOR, "input[name='text']"),
+                (By.XPATH, "//input[@autocomplete='username']")
+            ]
             
-            # Wait for navigation to home page
+            username_input = None
+            for by, selector in username_selectors:
+                try:
+                    username_input = WebDriverWait(self.browser.driver, 5).until(
+                        EC.presence_of_element_located((by, selector))
+                    )
+                    break
+                except TimeoutException:
+                    continue
+                    
+            if not username_input:
+                logger.error("Could not find username field")
+                return False
+            
+            username_input.clear()
+            username_input.send_keys(os.getenv('TWITTER_USERNAME'))
+            await asyncio.sleep(1)
+
+            # Click Next button
+            next_button_selectors = [
+                "//span[text()='Next']",
+                "//div[@role='button']//span[contains(text(), 'Next')]",
+                "//div[contains(@class, 'css-18t94o4')]//span[contains(text(), 'Next')]"
+            ]
+            
+            next_button = None
+            for selector in next_button_selectors:
+                try:
+                    next_button = WebDriverWait(self.browser.driver, 5).until(
+                        EC.element_to_be_clickable((By.XPATH, selector))
+                    )
+                    break
+                except TimeoutException:
+                    continue
+                    
+            if not next_button:
+                logger.error("Could not find Next button")
+                return False
+            
+            next_button.click()
+            await asyncio.sleep(2)
+
+            # Find and fill password field
+            password_selectors = [
+                (By.NAME, "password"),
+                (By.CSS_SELECTOR, "input[name='password']"),
+                (By.XPATH, "//input[@type='password']")
+            ]
+            
+            password_input = None
+            for by, selector in password_selectors:
+                try:
+                    password_input = WebDriverWait(self.browser.driver, 5).until(
+                        EC.presence_of_element_located((by, selector))
+                    )
+                    break
+                except TimeoutException:
+                    continue
+                    
+            if not password_input:
+                logger.error("Could not find password field")
+                return False
+            
+            password_input.clear()
+            password_input.send_keys(os.getenv('TWITTER_PASSWORD'))
+            await asyncio.sleep(1)
+
+            # Click login button
+            login_button_selectors = [
+                "//span[text()='Log in']",
+                "//div[@role='button']//span[contains(text(), 'Log in')]",
+                "//div[contains(@class, 'css-18t94o4')]//span[contains(text(), 'Log in')]"
+            ]
+            
+            login_button = None
+            for selector in login_button_selectors:
+                try:
+                    login_button = WebDriverWait(self.browser.driver, 5).until(
+                        EC.element_to_be_clickable((By.XPATH, selector))
+                    )
+                    break
+                except TimeoutException:
+                    continue
+                    
+            if not login_button:
+                logger.error("Could not find Login button")
+                return False
+            
+            login_button.click()
+            await asyncio.sleep(5)
+
+            # Check for login errors
             try:
-                WebDriverWait(self.browser.driver, 300).until(  # 5 minute timeout for manual login
+                error_message = self.browser.driver.find_element(By.XPATH, "//span[contains(text(), 'Wrong password')]")
+                if error_message:
+                    logger.error("Login failed: Wrong password")
+                    return False
+            except NoSuchElementException:
+                pass
+
+            # Verify successful login
+            try:
+                WebDriverWait(self.browser.driver, self.timeout).until(
                     EC.presence_of_element_located((By.CSS_SELECTOR, 
                         "[data-testid='SideNav_AccountSwitcher_Button']"
                     ))
@@ -142,7 +249,7 @@ class ActionHandler:
                 logger.info("Manual login successful")
                 return True
             except:
-                logger.error("Manual login failed or timed out")
+                logger.error("Login verification failed")
                 return False
                 
         except Exception as e:

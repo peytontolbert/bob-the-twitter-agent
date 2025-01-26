@@ -32,7 +32,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 class BobController:
-    def __init__(self, tweet_interval_minutes=30):
+    def __init__(self, tweet_interval_minutes=20):
         # Initialize shared memory
         self.memory = ConversationMemory()
         
@@ -42,10 +42,10 @@ class BobController:
         # Initialize Bob with memory
         self.bob = BobTheBuilder(os.getenv('OPENAI_API_KEY'), memory=self.memory)
         
-        # Initialize controllers
+        # Initialize controllers with shared memory
         self.tweet_controller = TweetController(
             self.action_handler, 
-            bob=self.bob,
+            bob=self.bob,  # Pass Bob instance which has the memory
             tweet_interval_minutes=tweet_interval_minutes
         )
         self.message_controller = MessageController(self.action_handler, memory=self.memory, bob=self.bob)
@@ -123,7 +123,7 @@ class BobController:
             
 async def main():
     # Create controller with 60-minute tweet interval
-    controller = BobController(tweet_interval_minutes=60)
+    controller = BobController(tweet_interval_minutes=20)
     await controller.run()
     
 if __name__ == "__main__":

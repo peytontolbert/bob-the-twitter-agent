@@ -12,8 +12,11 @@ class ConversationMemory:
         self.data_dir = Path("data/conversations")
         self.data_dir.mkdir(parents=True, exist_ok=True)
         self.memory = {}
+        self.tweets = []  # Add tweet storage
+        self.tweet_history_file = Path("data/tweet_history.json")  # Use existing tweet history file
         self.replied_mentions = self.load_replied_mentions()
         self.load_all_conversations()
+        self.load_tweets()  # Load tweet history
         
     def load_all_conversations(self):
         """Load all conversation files from disk"""
@@ -95,7 +98,11 @@ class ConversationMemory:
             logger.error(f"Error adding mention: {e}")
 
     def get_recent_context(self, handle: str, limit: int = 5) -> List[Dict]:
-        """Get recent conversation context for a handle"""
+        """Get recent context for a handle."""
+        if handle == 'tweets':
+            return [tweet['text'] for tweet in self.tweets[-limit:]]
+        
+        # Original conversation context logic
         try:
             messages = self.memory.get(handle, [])
             if not messages:
@@ -105,12 +112,10 @@ class ConversationMemory:
             def get_timestamp(msg):
                 ts = msg.get('timestamp')
                 if ts is None:
-                    return ''  # Return empty string for None timestamps
-                return str(ts)  # Convert all timestamps to strings for comparison
+                    return ''
+                return str(ts)
                 
             messages.sort(key=get_timestamp)
-            
-            # Return most recent messages
             return messages[-limit:]
             
         except Exception as e:
@@ -220,4 +225,57 @@ class ConversationMemory:
     def save_replied_mentions(self):
         """Save replied mentions"""
         with open('data/replied_mentions.json', 'w') as f:
-            json.dump(list(self.replied_mentions), f) 
+            json.dump(list(self.replied_mentions), f)
+
+    def load_tweets(self):
+        """Load tweet history from file."""
+        try:
+            if self.tweet_history_file.exists():
+                with open(self.tweet_history_file, 'r') as f:
+                    data = json.load(f)
+                    # Convert the existing format to our memory format
+                    self.tweets = [
+                        {
+                            'text': tweet,
+                            'timestamp': data.get('last_tweet_time'),
+                            'is_from_us': True
+                        } for tweet in data.get('tweet_history', [])
+                    ]
+            else:
+                self.tweets = []
+        except Exception as e:
+            logger.error(f"Error loading tweets: {e}")
+            self.tweets = []
+            
+    def save_tweets(self):
+        """Save tweet history to file."""
+        try:
+            self.tweet_history_file.parent.mkdir(parents=True, exist_ok=True)
+            # Convert our memory format back to the existing format
+            with open(self.tweet_history_file, 'r') as f:
+                existing_data = json.load(f)
+            
+            existing_data['tweet_history'] = [tweet['text'] for tweet in self.tweets]
+            if self.tweets:
+                existing_data['last_tweet_time'] = self.tweets[-1]['timestamp']
+            
+            with open(self.tweet_history_file, 'w') as f:
+                json.dump(existing_data, f)
+        except Exception as e:
+            logger.error(f"Error saving tweets: {e}")
+
+    def add_message(self, handle: str, message: Dict):
+        """Add a message to memory."""
+        if handle == 'tweets':
+            # Handle tweets differently
+            self.tweets.append(message)
+            if len(self.tweets) > 10:  # Keep last 10 tweets
+                self.tweets = self.tweets[-10:]
+            self.save_tweets()
+        else:
+            # Handle regular conversations as before
+            conv = self.get_conversation(handle)
+            if 'type' in message and message['type'] == 'dm':
+                self.add_dm(handle, message)
+            else:
+                self.add_mention(handle, message) 
